@@ -1,134 +1,67 @@
-mod mcp;
-mod fetch_tool;
-mod config;
+use rmcp::{
+    tool, tool_router, tool_handler,
+    model::{CallToolResult, Content, ServerCapabilities, ServerInfo},
+    transport::stdio,
+    ServiceExt,
+};
+use rmcp::handler::server::router::tool::ToolRouter;
+use std::future::Future;
+use std::sync::Arc;
+use tokio::sync::Mutex;
+use tracing_subscriber::{fmt, EnvFilter};
 
-use crate::config::Config;
-use crate::fetch_tool::FetchTool;
-use crate::mcp::jsonrpc::{ErrorCode, Id, JsonRpcRequest, JsonRpcResponse};
-use crate::mcp::stdio::{read_message, write_message};
-use anyhow::Result;
-use serde_json::json;
-use std::io;
-use tokio::io::{stdin, stdout};
-use tokio::time::{timeout, Duration};
-use tracing::{error, info};
+#[derive(Clone)]
+pub struct CounterServer {
+    counter: Arc<Mutex<i32>>,
+    tool_router: ToolRouter<Self>,
+}
+
+#[tool_router]
+impl CounterServer {
+    pub fn new() -> Self {
+        Self {
+            counter: Arc::new(Mutex::new(0)),
+            tool_router: Self::tool_router(),
+        }
+    }
+
+    #[tool(description = "Increment the counter by 1")]
+    async fn increment(&self) -> Result<CallToolResult, rmcp::Error> {
+        let mut c = self.counter.lock().await;
+        *c += 1;
+        Ok(CallToolResult::success(vec![Content::text(c.to_string())]))
+    }
+
+    #[tool(description = "Get the current counter value")]
+    async fn get(&self) -> Result<CallToolResult, rmcp::Error> {
+        let c = self.counter.lock().await;
+        Ok(CallToolResult::success(vec![Content::text(c.to_string())]))
+    }
+}
+
+#[tool_handler]
+impl rmcp::ServerHandler for CounterServer {
+    fn get_info(&self) -> ServerInfo {
+        ServerInfo {
+            instructions: Some("A simple counter server".into()),
+            capabilities: ServerCapabilities::builder().enable_tools().build(),
+            ..Default::default()
+        }
+    }
+}
 
 #[tokio::main]
-async fn main() -> Result<()> {
-    init_tracing();
-
-    let mut cfg = Config::from_env();
-    let fetch_tool = FetchTool::new(cfg.clone());
-
-    // MCP handshake loop over stdio
-    let mut reader = stdin();
-    let mut writer = stdout();
-
-    loop {
-        let msg = match read_message(&mut reader).await {
-            Ok(m) => m,
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => break,
-            Err(e) => {
-                error!("read_message error: {e}");
-                break;
-            }
-        };
-
-        let req: JsonRpcRequest = match serde_json::from_slice(&msg) {
-            Ok(r) => r,
-            Err(e) => {
-                // Not a request, ignore or handle notifications
-                continue;
-            }
-        };
-
-        let id = req.id.clone();
-        let method = req.method.as_str();
-        let resp = match method {
-            "initialize" => handle_initialize(&req).await,
-            "tools/list" => handle_tools_list(&req).await,
-            "tools/call" => handle_tools_call(&req, &fetch_tool).await,
-            _ => JsonRpcResponse::error(id, ErrorCode::MethodNotFound, Some("Unknown method".into()), None),
-        };
-
-        let bytes = serde_json::to_vec(&resp)?;
-        if let Err(e) = write_message(&mut writer, &bytes).await {
-            error!("write_message error: {e}");
-            break;
-        }
-    }
-
-    Ok(())
-}
-
-fn init_tracing() {
-    let _ = tracing_subscriber::fmt()
-        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-        .with_target(false)
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize logging
+    let _ = fmt()
+        .with_env_filter(EnvFilter::from_default_env().add_directive("info".parse()?))
         .try_init();
-}
 
-async fn handle_initialize(req: &JsonRpcRequest) -> JsonRpcResponse {
-    let id = req.id.clone();
-    let result = json!({
-        "protocolVersion": "2024-11-05",
-        "capabilities": {
-            "tools": true
-        }
-    });
-    JsonRpcResponse::result(id, result)
-}
+    let service = CounterServer::new()
+        .serve(stdio())
+        .await
+        .inspect_err(|e| eprintln!("Error starting server: {e}"))?;
 
-async fn handle_tools_list(req: &JsonRpcRequest) -> JsonRpcResponse {
-    let id = req.id.clone();
-    let result = json!({
-        "tools": [
-            {
-                "name": "fetch",
-                "description": "Perform HTTP requests with allowlist restrictions",
-                "inputSchema": {
-                    "type": "object",
-                    "properties": {
-                        "url": {"type": "string"},
-                        "method": {"type": "string", "default": "GET"},
-                        "headers": {"type": "object", "additionalProperties": {"type": "string"}},
-                        "body": {"oneOf": [
-                            {"type": "string"},
-                            {"type": "object"}
-                        ]},
-                        "timeoutMs": {"type": "number"},
-                        "maxBytes": {"type": "number"}
-                    },
-                    "required": ["url"],
-                    "additionalProperties": false
-                }
-            }
-        ]
-    });
-    JsonRpcResponse::result(id, result)
-}
-
-async fn handle_tools_call(req: &JsonRpcRequest, fetch_tool: &FetchTool) -> JsonRpcResponse {
-    let id = req.id.clone();
-    #[derive(serde::Deserialize)]
-    struct Params {
-        name: String,
-        #[serde(default)]
-        arguments: serde_json::Value,
-    }
-    let params: Params = match req.params.clone().and_then(|v| serde_json::from_value(v).ok()) {
-        Some(p) => p,
-        None => {
-            return JsonRpcResponse::error(id, ErrorCode::InvalidParams, Some("Invalid params".into()), None)
-        }
-    };
-
-    if params.name != "fetch" {
-        return JsonRpcResponse::error(id, ErrorCode::InvalidParams, Some("Unknown tool".into()), None);
-    }
-
-    match fetch_tool.call(params.arguments).await {
-        Ok(result) => JsonRpcResponse::result(id, result),
-        Err(e) => JsonRpcResponse::error(id, ErrorCode::InternalError, Some(format!("{e}").into()), None),
-    }
+    service.waiting().await?;
+    Ok(())
 }

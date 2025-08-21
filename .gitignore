@@ -1,1 +1,17 @@
+target/
+**/*.rs.bk
+Cargo.lock
+.DS_Store
+
+# Editors/IDEs
+.vscode/
+.idea/
+
+# Rust/Cargo
+**/*.rlib
+**/*.rmeta
 /target
+
+# Logs
+*.log
+
