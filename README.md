@@ -27,6 +27,42 @@ Run (stdio):
 cargo run --quiet
 ```
 
+## Install (from source)
+Install the binary to your Cargo bin directory (~/.cargo/bin by default):
+```
+cargo install --path .
+```
+Then run it directly (stdio server):
+```
+~/.cargo/bin/fetch_MCP_rust
+```
+
+## Set up in LLM agents (MCP stdio)
+Most MCP-capable clients can launch a stdio server by running a command.
+Use the installed binary path (e.g., ~/.cargo/bin/fetch_MCP_rust):
+
+- Generic MCP client configuration (conceptual):
+  - Command: ~/.cargo/bin/fetch_MCP_rust
+  - Args: []
+
+- Cursor (example): add an entry to your MCP servers configuration that runs the binary:
+```json
+{
+  "mcpServers": {
+    "fetch-mcp": {
+      "command": "~/.cargo/bin/fetch_MCP_rust",
+      "args": []
+    }
+  }
+}
+```
+Restart Cursor if needed so it discovers the server and the `RFetch` tool.
+
+- Warp (example): open Warp AI, go to Tools (or MCP servers) and add a new server:
+  - Command: ~/.cargo/bin/fetch_MCP_rust
+  - Args: []
+After adding, Warp should list the `RFetch` tool for use in the agent.
+
 ## Tool API
 Tool name: `RFetch`
 Description: HTTP GET fetcher that returns response body as text
