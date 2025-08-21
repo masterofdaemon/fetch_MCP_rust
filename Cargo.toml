@@ -5,6 +5,12 @@ edition = "2021"
 authors = ["Your Name <you@example.com>"]
 description = "High-performance Rust implementation of an MCP fetch server"
 license = "MIT OR Apache-2.0"
+readme = "README.md"
+repository = "https://github.com/your-org/fetch_mcp_rust"
+homepage = "https://github.com/your-org/fetch_mcp_rust"
+documentation = "https://github.com/your-org/fetch_mcp_rust#readme"
+keywords = ["mcp", "jsonrpc", "fetch", "tokio", "reqwest"]
+categories = ["command-line-utilities", "network-programming"]
 
 [dependencies]
 anyhow = "1"

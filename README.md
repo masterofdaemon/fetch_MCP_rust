@@ -1,5 +1,8 @@
 # fetch_mcp_rust
 
+![CI](https://img.shields.io/github/actions/workflow/status/your-org/fetch_mcp_rust/ci.yml?branch=main)
+![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue)
+
 High-performance Rust implementation of the MCP (Model Context Protocol) "fetch" server. It exposes a single tool, `fetch`, that performs HTTP(S) requests with an allowlist, timeouts, and response-size limits — optimized for low memory and CPU overhead.
 
 - Language/runtime: Rust + tokio
@@ -154,6 +157,12 @@ cargo test
 - HTTP(S)-only
 - Allowlist required to reach hosts; defaults to `https://*` for convenience — restrict in production.
 - Timeout and body-size caps mitigate resource abuse.
+
+### Security best practices
+- Prefer HTTPS-only (default) to protect integrity and privacy.
+- Narrow FETCH_ALLOWLIST to specific hosts/paths used by your workflows.
+- Set conservative FETCH_TIMEOUT_MS and FETCH_MAX_BYTES appropriate to your environment.
+- Run the server with least privileges and within a locked-down network context when possible.
 
 ## License
 Dual-licensed under either of:
